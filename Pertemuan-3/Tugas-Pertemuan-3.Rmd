@@ -1,1 +1,225 @@
+---
+title: "Tugas-Pertemuan-3"
+output:
+  html_document: 
+    theme: lumen
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    code_folding: hide
+  pdf_document: default
+  word_document: default
+---
+
+# Data
+## Library/Packages
+```{r}
+library(dLagM)
+library(dynlm)
+library(MLmetrics)
+library(lmtest)
+library(car)
+```
+
+## Impor & Pembagian Data
+```{r}
+library(rio) 
+data <- import("C:/Users/nuran/OneDrive/Documents/Semester 5/MPDW/mpdw/Pertemuan-3/NewDelhi_Air_quality.csv")
+data
+```
+```{r}
+# Mengambil hanya variabel AQI dan O3
+data <- data[, c("AQI", "o3")]
+data 
+
+# Membagi data (58 observasi pertama untuk training, 14 observasi terakhir untuk testing)
+train <- data[1:58, ]
+test <- data[59:72, ]
+
+# Mengubah format data menjadi objek Time Series (ts)
+train.ts <- ts(train)
+test.ts <- ts(test)
+data.ts <- ts(data)
+```
+# Metode Regresi dengan Peubah Lag
+## Model Koyck
+### Pemodelan
+```{r}
+# Membangun Model Koyck
+model.koyck <- koyckDlm(x = train$o3, y = train$AQI)
+summary(model.koyck)
+```
+**Interpretasi:** Jika *P-value* dari peubah $X_t$ dan $Y_{t-1}$ $< 0.05$, artinya kedua peubah tersebut berpengaruh signifikan terhadap $Y_t$. Koefisien pada $Y_{t-1}$ mewakili parameter $\lambda$ (tingkat penurunan pengaruh).
+
+**Persamaan:**
+$$\hat{Y_t}=0.26260+0.25823X_t+0.42943Y_{t-1}$$
+
+### Peramalanan
+```{r}
+# Meramalkan 14 periode ke depan
+fore.koyck <- forecast(model = model.koyck, x = test$o3, h = 14)
+fore.koyck
+```
+
+```{r}
+# Cek Akurasi (MAPE) pada data testing
+mape.koyck <- MAPE(fore.koyck$forecasts, test$AQI)
+cat("MAPE Model Koyck:", mape.koyck, "\n")
+```
+Perhitungan akurasi menghasilkan nilai MAPE sebesar 2,91%. Karena nilai MAPE yang diperoleh kurang dari 10%, maka tingkat akurasi peramalan model Koyck dapat dikategorikan sebagai sangat baik.
+
+## Regression with Distributed Lag (DLM)
+### Pemodelan (Lag = 2)
+```{r}
+model.dlm <- dlm(x = train$o3, y = train$AQI, q = 2)
+summary(model.dlm)
+```
+### Penentuan *Lag* Optimum
+```{r}
+finiteDLMauto(formula = AQI ~ o3,
+              data = data.frame(train), q.min = 1, q.max = 10,
+              model.type = "dlm", error.type = "AIC", trace = TRUE)
+```
+**Interpretasi:** Pilih baris dengan nilai AIC yang paling kecil (negatif terbesar). Misalnya, lag optimum berada pada $q=10$, kita bangun ulang modelnya:
+```{r}
+# Membangun ulang DLM dengan Lag Optimum (q=6)
+model.dlm.opt <- dlm(x = train$o3, y = train$AQI, q = 10)
+summary(model.dlm.opt)
+```
+
+```{r}
+# Peramalan model DLM Optimum
+fore.dlm.opt <- forecast(model = model.dlm.opt, x = test$o3, h = 14)
+mape.dlm.opt <- MAPE(fore.dlm.opt$forecasts, test$AQI)
+cat("MAPE Model DLM Optimum:", mape.dlm.opt, "\n")
+```
+Perhitungan akurasi menghasilkan nilai MAPE sebesar 1,27%. Karena nilai MAPE yang diperoleh kurang dari 10%, maka tingkat akurasi peramalan model DLM Optimum dapat dikategorikan sebagai sangat baik.
+
+## Autoregressive Distributed Lag (ARDL)
+### Pemodelan
+```{r}
+# Model ARDL dengan lag X = 1 dan lag Y = 1
+model.ardl <- ardlDlm(formula = AQI ~ o3, data = train, p = 1, q = 1)
+summary(model.ardl)
+```
+### *Lag* Optimum ARDL
+```{r}
+model.ardl.opt <- ardlBoundOrders(data = data.frame(data), ic = "AIC", formula = AQI ~ o3)
+
+# Menarik kombinasi lag dengan AIC terkecil
+min_p <- c()
+for(i in 1:length(model.ardl.opt$Stat.table)){
+  min_p[i] <- min(model.ardl.opt$Stat.table[[i]])
+}
+q_opt <- which(min_p == min(min_p, na.rm = TRUE))
+p_opt <- which(model.ardl.opt$Stat.table[[q_opt]] == min(model.ardl.opt$Stat.table[[q_opt]], na.rm = TRUE))
+
+data.frame("Lag_Y_opt(q)" = q_opt, "Lag_X_opt(p)" = p_opt, "AIC" = model.ardl.opt$min.Stat)
+```
+
+```{r}
+# Peramalan ARDL awal (p=1, q=1)
+fore.ardl <- forecast(model = model.ardl, x = test$o3, h = 14)
+mape.ardl <- MAPE(fore.ardl$forecasts, test$AQI)
+cat("MAPE Model ARDL (1,1):", mape.ardl, "\n")
+```
+Perhitungan akurasi menghasilkan nilai MAPE sebesar 0,78%. Karena nilai MAPE yang diperoleh kurang dari 10%, maka tingkat akurasi peramalan model ARDL (1,1) dapat dikategorikan sebagai sangat baik.
+
+# Evaluasi asumsi model dan bandingkan kinerja peramalan menggunakan metrik akurasi (MAPE) dan deviance serta visualisasi grafik
+## Pendekatan dengan Library `dynlm` dan Uji Asumsi
+```{r}
+# Sama dengan DLM (q=1)
+cons_lm1 <- dynlm(AQI ~ o3 + L(o3), data = train.ts)
+
+# Setara dengan Model Autoregressive Murni (Hanya melibatkan o3 dan AQI-1)
+cons_lm2 <- dynlm(AQI ~ o3 + L(AQI), data = train.ts)
+
+# Sama dengan ARDL (p=1, q=1)
+cons_lm3 <- dynlm(AQI ~ o3 + L(o3) + L(AQI), data = train.ts)
+```
+
+### Uji Asumsi Model
+### Uji Autokorelasi (Durbin-Watson)
+H0: Tidak ada autokorelasi pada sisaan
+H1: Ada autokorelasi pada sisaan
+```{r}
+dwtest(cons_lm1)
+dwtest(cons_lm2)
+dwtest(cons_lm3)
+```
+### Uji Heteroskedastisitas (Breusch-Pagan)
+H0: Ragam sisaan homogen (homoskedastisitas)
+H1: Ragam sisaan tidak homogen (heteroskedastisitas)
+```{r}
+bptest(cons_lm1)
+bptest(cons_lm2)
+bptest(cons_lm3)
+```
+
+### Uji Normalitas (Shapiro-Wilk)
+H0: Sisaan berdistribusi normal.
+H1: Sisaan tidak berdistribusi normal.
+```{r}
+shapiro.test(residuals(cons_lm1))
+shapiro.test(residuals(cons_lm2))
+shapiro.test(residuals(cons_lm3))
+```
+### Keputusan
+**(Catatan: Tolak H₀ jika p-value < 0,05)**
+Berdasarkan uji asumsi klasik pada ketiga model, diperoleh hasil sebagai berikut.
+**Model cons_lm1:** Berdasarkan uji Durbin-Watson diperoleh p-value sebesar **4,224 × 10⁻⁵ < 0,05**, sehingga H₀ ditolak dan terdapat **autokorelasi positif** pada residual. Uji Breusch-Pagan menghasilkan p-value sebesar **0,5953 > 0,05**, sehingga tidak terdapat bukti adanya heteroskedastisitas dan asumsi **homoskedastisitas terpenuhi**. Sementara itu, uji Shapiro-Wilk menghasilkan p-value sebesar **7,651 × 10⁻¹⁰ < 0,05**, sehingga residual **tidak berdistribusi normal**. Dengan demikian, model cons_lm1 belum memenuhi asumsi bebas autokorelasi dan normalitas, tetapi telah memenuhi asumsi homoskedastisitas.
+
+**Model cons_lm2:** Berdasarkan uji Durbin-Watson diperoleh p-value sebesar **0,03841 < 0,05**, sehingga H₀ ditolak dan terdapat **autokorelasi positif** pada residual. Uji Breusch-Pagan menghasilkan p-value sebesar **7,456 × 10⁻⁶ < 0,05**, sehingga terdapat **heteroskedastisitas**. Sementara itu, uji Shapiro-Wilk menghasilkan p-value sebesar **0,003296 < 0,05**, sehingga residual **tidak berdistribusi normal**. Dengan demikian, model cons_lm2 belum memenuhi asumsi bebas autokorelasi, homoskedastisitas, dan normalitas.
+
+**Model cons_lm3:** Berdasarkan uji Durbin-Watson diperoleh p-value sebesar **0,9961 > 0,05**, sehingga gagal menolak H₀ dan **tidak terdapat bukti autokorelasi positif** pada residual. Uji Breusch-Pagan menghasilkan p-value sebesar **0,003207 < 0,05**, sehingga terdapat **heteroskedastisitas**. Sementara itu, uji Shapiro-Wilk menghasilkan p-value sebesar **0,1375 > 0,05**, sehingga gagal menolak H₀ dan residual dapat dianggap **berdistribusi normal**. Dengan demikian, model cons_lm3 telah memenuhi asumsi bebas autokorelasi positif dan normalitas, tetapi belum memenuhi asumsi homoskedastisitas karena masih terdapat heteroskedastisitas.
+
+## Perbandingan Performa Model
+### Akurasi
+```{r}
+# Ringkasan Akurasi
+akurasi <- matrix(c(mape.koyck, mape.dlm.opt, mape.ardl))
+row.names(akurasi) <- c("Koyck", "DLM Optimum", "ARDL (1,1)")
+colnames(akurasi) <- c("MAPE")
+print(akurasi)
+```
+Berdasarkan nilai MAPE yang diperoleh, model ARDL (1,1) memiliki nilai MAPE paling kecil yaitu sebesar 0,00779035 dibandingkan model DLM Optimum sebesar 0,01272540 dan model Koyck sebesar 0,02909543. Hal ini menunjukkan bahwa model ARDL (1,1) memiliki tingkat kesalahan peramalan paling rendah dan menghasilkan peramalan yang paling akurat di antara ketiga model. Sementara itu, model Koyck memiliki nilai MAPE terbesar sehingga memiliki tingkat kesalahan peramalan yang paling tinggi dibandingkan model lainnya. Dengan demikian, berdasarkan kriteria MAPE, model terbaik untuk meramalkan AQI adalah model ARDL (1,1).
+
+## Visualisasi Aktual vs Peramalan
+```{r}
+par(mfrow=c(1,1))
+plot(test$o3, test$AQI, type="b", col="black", ylim=c(15,30), lwd=2, 
+     ylab="Nilai Y", xlab="Nilai X", main="Perbandingan Model Peramalan")
+
+lines(test$o3, fore.koyck$forecasts, col="red", type="b", pch=16)
+lines(test$o3, fore.dlm.opt$forecasts, col="blue", type="b", pch=17)
+lines(test$o3, fore.ardl$forecasts, col="green", type="b", pch=18)
+
+legend("topleft", legend=c("Aktual", "Koyck", "DLM Optimum", "ARDL (1,1)"),
+       col=c("black","red","blue","green"), lty=1, pch=c(1,16,17,18), cex=0.8, inset=0.02)
+```
+```{r}
+par(mfrow=c(1,1))
+plot(test$o3, test$AQI, type="b", col="black",lwd=2, 
+     ylab="Nilai Y", xlab="Nilai X", main="Perbandingan Model Peramalan")
+
+lines(test$o3, fore.koyck$forecasts, col="red", type="b", pch=16)
+lines(test$o3, fore.dlm.opt$forecasts, col="blue", type="b", pch=17)
+lines(test$o3, fore.ardl$forecasts, col="green", type="b", pch=18)
+
+legend("topleft", legend=c("Aktual", "Koyck", "DLM Optimum", "ARDL (1,1)"),
+       col=c("black","red","blue","green"), lty=1, pch=c(1,16,17,18), cex=0.8, inset=0.02)
+```
+```{r}
+par(mfrow=c(1,1))
+plot(test$o3, test$AQI, type="b", col="black", ylim=c(15,65), lwd=2, 
+     ylab="Nilai Y", xlab="Nilai X", main="Perbandingan Model Peramalan")
+
+lines(test$o3, fore.koyck$forecasts, col="red", type="b", pch=16)
+lines(test$o3, fore.dlm.opt$forecasts, col="blue", type="b", pch=17)
+lines(test$o3, fore.ardl$forecasts, col="green", type="b", pch=18)
+
+legend("topleft", legend=c("Aktual", "Koyck", "DLM Optimum", "ARDL (1,1)"),
+       col=c("black","red","blue","green"), lty=1, pch=c(1,16,17,18), cex=0.8, inset=0.02)
+```
+
 
