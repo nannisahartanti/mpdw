@@ -494,7 +494,7 @@ Berdasarkan pola segitiga nol pada plot EACF,terlihat bahwa segitiga nol mulai t
 
 Berdasarkan plot time series, ACF, dan PACF, model ARMA(2,2) hasil simulasi menunjukkan karakteristik yang mengindikasikan stasioneritas. Plot time series berfluktuasi di sekitar rataan yang relatif konstan, sedangkan ACF dan PACF menunjukkan pola tails off yang menurun menuju nol. Dengan demikian, model ARMA(2,2) hasil simulasi dapat dikatakan stasioner.
 
-## Scatterplot & Auto korelasi Antar Lag 
+## Scatterplot & Auto korelasi Antar Lag
 
 ### Yt​ dengan Yt−1​
 
