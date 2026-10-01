@@ -1,0 +1,151 @@
+---
+title: "Tugas-Pertemuan-4"
+output:
+  html_document: 
+    theme: lumen
+    toc: true
+    toc_depth: 3
+    toc_float: true
+  pdf_document: default
+  word_document: default
+---
+
+# Packages
+
+```{r}
+library(ggplot2)
+library(tsibble)
+library(tseries)
+library(MASS)
+library(forecast)
+library(TSA)
+library(TTR)
+library(aTSA)
+```
+
+# Import Data
+
+```{r}
+data_revenue <- rio::import("https://raw.githubusercontent.com/nannisahartanti/mpdw/8ea0234c9a2bed31a269e00a544397f3eb6456f4/DATA/retail-daily-sales.csv")
+data_revenue <- data_revenue[1:500, ]
+data_revenue <- data_revenue["total_revenue"]
+data_revenue.ts <- ts(data_revenue$total_revenue)
+```
+
+# Eksplorasi Data
+
+## Plot Data Penuh
+
+```{r}
+plot.ts(data_revenue.ts,
+        lty = 1,
+        xlab = "Waktu",
+        ylab = "Total Revenue",
+        main = "Plot Data Total Revenue")
+```
+
+Berdasarkan plot data deret waktu total revenue, terlihat bahwa data mengalami fluktuasi yang cukup tinggi dan tidak menunjukkan pola tren yang jelas, baik meningkat maupun menurun. Berdasarkan pola data tersebut, pembagian data latih dan data uji ditetapkan dengan proporsi 80%:20%, yaitu sebanyak 400 pengamatan sebagai data latih dan 100 pengamatan sebagai data uji.
+
+## Plot Data Latih
+
+```{r}
+data_revenue_train <- data_revenue[1:300, ]
+train.ts <- ts(data_revenue_train)
+
+plot.ts(train.ts,lty = 1,xlab = "Waktu",ylab = "Total Revenue",main = "Plot Total Revenue Train")
+```
+
+## Plot Data Uji
+
+```{r}
+data_revenue_test <- data_revenue[301:500, ]
+test.ts <- ts(data_revenue_test)
+
+plot.ts(test.ts,lty = 1,xlab = "Waktu",ylab = "Total Revenue",main = "Plot Total Revenue Test")
+```
+
+# Uji Stasioneritas Data
+
+## Plot ACF
+
+```{r}
+acf(train.ts)
+```
+Berdasarkan plot ACF, terlihat bahwa nilai autokorelasi pada sebagian besar lag berada di sekitar nol dan tidak menunjukkan pola penurunan secara perlahan (tails off slowly). Dengan demikian, data train.ts dapat dikatakan cenderung stasioner dalam rataan. Meskipun terdapat autokorelasi yang signifikan pada lag ke-19, hal tersebut belum menunjukkan adanya ketidakstasioneran secara keseluruhan.
+
+## Uji ADF
+
+```{r}
+tseries::adf.test(train.ts)
+```
+
+$H_0$: Data tidak stasioner dalam rataan
+
+$H_1$: Data stasioner dalam rataan
+
+Berdasarkan uji ADF tersebut, didapat *p-value* sebesar **0,01** yang lebih kecil dari taraf nyata 5% sehingga **tolak** $H_0$. Hal ini menandakan bahwa data **stasioner dalam rataan**. Hasil ini sesuai dengan eksplorasi menggunakan plot time series dan plot ACF yang tidak menunjukkan pola *tails off slowly*. Dengan demikian, data `train.ts` **tidak memerlukan proses *differencing* untuk menangani ketidakstasioneran dalam rataan**.
+
+## Plot Box-Cox
+
+```{r}
+index <- seq(1:300)
+
+# Box-Cox
+bc <- boxcox(train.ts ~ index, lambda = seq(-2, 2, by = 0.1))
+
+# Nilai lambda optimum (rounded)
+lambda_opt <- bc$x[which.max(bc$y)]
+lambda_opt
+
+# Selang kepercayaan 95% untuk lambda
+ci_lambda <- bc$x[bc$y > max(bc$y) - 0.5 * qchisq(0.95, df = 1)]
+
+# Batas bawah dan batas atas
+ci_lower <- min(ci_lambda)
+ci_upper <- max(ci_lambda)
+
+c(Batas_Bawah = ci_lower, Batas_Atas = ci_upper)
+```
+# Penanganan Ketidakstasioneran Data
+Karena berdasarkan plot time series, plot ACF, dan uji ADF data train.ts sudah stasioner dalam rataan, maka tidak dilakukan differencing. Hasil uji ADF menunjukkan p-value sebesar 0,01 < 0,05 sehingga $(H_0)$ ditolak dan data dinyatakan stasioner dalam rataan. Dengan demikian, orde differencing yang digunakan adalah $(d=0)$.
+
+## Transformasi
+```{r}
+# Transformasi data dengan lambda optimum
+train.transformed <- train.ts^lambda_opt
+
+# Cek ulang stasioneritas rataan pada data hasil transformasi
+plot.ts(train.transformed, main = "Plot Data Setelah Transformasi Box-Cox")
+acf(train.transformed)
+tseries::adf.test(train.transformed)
+
+# Box-Cox setelah transformasi pertama
+index_transformed <- seq(1:300)
+
+bc2 <- boxcox(train.transformed ~ index_transformed,
+              lambda = seq(-2, 2, by = 0.1))
+
+# Lambda optimum terakhir
+lambda_opt2 <- bc2$x[which.max(bc2$y)]
+lambda_opt2
+
+# Selang kepercayaan 95%
+ci_lambda2 <- bc2$x[
+  bc2$y > max(bc2$y) -
+    0.5 * qchisq(0.95, df = 1)
+]
+
+# Batas bawah dan batas atas
+ci_lower2 <- min(ci_lambda2)
+ci_upper2 <- max(ci_lambda2)
+
+c(Batas_Bawah = ci_lower2,
+  Batas_Atas = ci_upper2)
+
+
+
+
+
+
+
+
