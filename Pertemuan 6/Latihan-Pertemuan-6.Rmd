@@ -1,5 +1,5 @@
 ---
-title: "Tugas-Pertemuan-4"
+title: "Tugas-Pertemuan-6"
 output:
   html_document: 
     theme: lumen
@@ -32,7 +32,7 @@ data_revenue <- data_revenue["total_revenue"]
 data_revenue.ts <- ts(data_revenue$total_revenue)
 ```
 
-# Eksplorasi Data
+# Eksplorasi Data {.tabset}
 
 ## Plot Data Penuh
 
@@ -49,7 +49,7 @@ Berdasarkan plot data deret waktu total revenue, terlihat bahwa data mengalami f
 ## Plot Data Latih
 
 ```{r}
-data_revenue_train <- data_revenue[1:300, ]
+data_revenue_train <- data_revenue[1:400, ]
 train.ts <- ts(data_revenue_train)
 
 plot.ts(train.ts,lty = 1,xlab = "Waktu",ylab = "Total Revenue",main = "Plot Total Revenue Train")
@@ -58,13 +58,13 @@ plot.ts(train.ts,lty = 1,xlab = "Waktu",ylab = "Total Revenue",main = "Plot Tota
 ## Plot Data Uji
 
 ```{r}
-data_revenue_test <- data_revenue[301:500, ]
+data_revenue_test <- data_revenue[401:500, ]
 test.ts <- ts(data_revenue_test)
 
 plot.ts(test.ts,lty = 1,xlab = "Waktu",ylab = "Total Revenue",main = "Plot Total Revenue Test")
 ```
 
-# Uji Stasioneritas Data
+# Uji Stasioneritas Data {.tabset}
 
 ## Plot ACF
 
@@ -88,7 +88,7 @@ Berdasarkan uji ADF tersebut, didapat *p-value* sebesar **0,01** yang lebih keci
 ## Plot Box-Cox
 
 ```{r}
-index <- seq(1:300)
+index <- seq(1:400)
 
 # Box-Cox
 bc <- boxcox(train.ts ~ index, lambda = seq(-2, 2, by = 0.1))
@@ -106,46 +106,243 @@ ci_upper <- max(ci_lambda)
 
 c(Batas_Bawah = ci_lower, Batas_Atas = ci_upper)
 ```
-# Penanganan Ketidakstasioneran Data
+
+# Penanganan Ketidakstasioneran Data 
+## Differencing
 Karena berdasarkan plot time series, plot ACF, dan uji ADF data train.ts sudah stasioner dalam rataan, maka tidak dilakukan differencing. Hasil uji ADF menunjukkan p-value sebesar 0,01 < 0,05 sehingga $(H_0)$ ditolak dan data dinyatakan stasioner dalam rataan. Dengan demikian, orde differencing yang digunakan adalah $(d=0)$.
 
-## Transformasi
+## Transformasi 
 ```{r}
-# Transformasi data dengan lambda optimum
-train.transformed <- train.ts^lambda_opt
+# Transformasi Box-Cox dengan lambda optimum
+train.bc <- train.ts^lambda_opt
 
-# Cek ulang stasioneritas rataan pada data hasil transformasi
-plot.ts(train.transformed, main = "Plot Data Setelah Transformasi Box-Cox")
-acf(train.transformed)
-tseries::adf.test(train.transformed)
+# Plot data setelah transformasi
+plot.ts(train.bc,main = "Data Training Setelah Transformasi Box-Cox")
 
-# Box-Cox setelah transformasi pertama
-index_transformed <- seq(1:300)
+# Box-Cox pada data hasil transformasi
+index_bc <- seq(1:length(train.bc))
+bc_trans <- boxcox(train.bc ~ index_bc,lambda = seq(-2, 2, by = 0.1))
 
-bc2 <- boxcox(train.transformed ~ index_transformed,
-              lambda = seq(-2, 2, by = 0.1))
-
-# Lambda optimum terakhir
-lambda_opt2 <- bc2$x[which.max(bc2$y)]
-lambda_opt2
+# Lambda optimum setelah transformasi
+lambda_opt_trans <- bc_trans$x[which.max(bc_trans$y)]
+lambda_opt_trans
 
 # Selang kepercayaan 95%
-ci_lambda2 <- bc2$x[
-  bc2$y > max(bc2$y) -
-    0.5 * qchisq(0.95, df = 1)
-]
+ci_lambda_trans <- bc_trans$x[bc_trans$y > max(bc_trans$y) -0.5 * qchisq(0.95, df = 1)]
 
 # Batas bawah dan batas atas
-ci_lower2 <- min(ci_lambda2)
-ci_upper2 <- max(ci_lambda2)
+ci_lower_trans <- min(ci_lambda_trans)
+ci_upper_trans <- max(ci_lambda_trans)
+c(Batas_Bawah = ci_lower_trans,Batas_Atas = ci_upper_trans)
+```
 
-c(Batas_Bawah = ci_lower2,
-  Batas_Atas = ci_upper2)
-
-
-
+Berdasarkan hasil transformasi Box-Cox, diperoleh nilai lambda optimum sebesar $\lambda = 0.989899$ dengan selang kepercayaan 95% sebesar $(0.8282828; 1.1919192)$. Karena selang kepercayaan tersebut mengandung nilai 1, maka transformasi Box-Cox tidak diperlukan untuk menstabilkan ragam. Dengan demikian, data dapat dinyatakan sudah stasioner terhadap ragam.
 
 
+# Identifikasi Model {.tabset}
+## Plot ACF 
+```{r}
+acf(train.bc)
+```
+
+Berdasarkan plot tersebut, terlihat bahwa plot ACF tidak menunjukkan pola cuts off maupun tails off yang jelas. Sebagian besar nilai autokorelasi berada di dalam batas signifikansi, sehingga pola ACF cenderung menyerupai white noise. Dengan demikian, tidak terdapat komponen MA yang dominan, sehingga model tentatif yang dapat dipertimbangkan adalah ARIMA(0,0,0).
+
+## Plot PACF
+```{r}
+pacf(train.bc)
+```
+
+Berdasarkan plot tersebut, terlihat bahwa plot PACF tidak menunjukkan pola cuts off maupun tails off yang jelas. Sebagian besar nilai autokorelasi parsial berada di dalam batas signifikansi, sehingga pola PACF cenderung menyerupai white noise. Dengan demikian, tidak terdapat komponen AR yang dominan, sehingga model tentatif yang dapat dipertimbangkan adalah ARIMA(0,0,0).
+
+## Plot EACF
+```{r}
+eacf(train.bc)
+```
+
+Berdasarkan tabel EACF tersebut, ujung (titik sudut) segitiga “o” berada pada AR = 0 dan MA = 0. Hal ini ditunjukkan oleh seluruh baris AR = 0 yang berisi “o” serta sel diagonal \((1,1), (2,2), (3,3), \ldots\) yang juga menunjukkan “o”. Oleh karena itu, model tentatif utama yang terbentuk adalah ARIMA(0,0,0). Selain itu, ARIMA(0,0,1) dan ARIMA(1,0,1) dapat digunakan sebagai model pembanding.
+
+# Pendugaan Parameter Model Tentatif {.tabset}
+## ARIMA(0,0,0)
+```{r}
+model1.bc=Arima(train.bc, order=c(0,0,0),method="ML")
+summary(model1.bc)
+lmtest::coeftest(model1.bc) #seluruh parameter signifikan
+```
+
+Berdasarkan hasil pemodelan, diperoleh model ARIMA(0,0,0) dengan mean tidak nol. Nilai estimasi intercept sebesar 39,0614 dengan standard error sebesar 0,7947. Hasil uji signifikansi parameter menunjukkan nilai p-value < 2,2 × 10⁻¹⁶, lebih kecil dari taraf nyata 5%, sehingga parameter intercept dinyatakan signifikan. Nilai AIC sebesar 3351,90, AICc sebesar 3351,93, dan BIC sebesar 3359,88 dapat digunakan untuk membandingkan model ini dengan model tentatif lainnya. Sementara itu, nilai RMSE sebesar 15,8939 dan MAE sebesar 13,4665 menunjukkan besarnya kesalahan prediksi pada data training.
+
+## ARIMA(0,0,1)
+```{r}
+model2.bc=Arima(train.bc, order=c(0,0,1),method="ML")
+summary(model2.bc)
+lmtest::coeftest(model2.bc) #seluruh parameter signifikan
+```
+
+Berdasarkan hasil pemodelan, diperoleh model ARIMA(0,0,1) dengan mean tidak nol. Nilai estimasi parameter MA(1) sebesar -0,02896 dengan standard error sebesar 0,04836. Berdasarkan uji signifikansi parameter, diperoleh p-value sebesar 0,5493, lebih besar dari taraf nyata 5%, sehingga parameter MA(1) tidak signifikan. Sementara itu, parameter intercept sebesar 39,0612 memiliki p-value < 2,2 × 10⁻¹⁶, sehingga parameter intercept signifikan.
+Model ini memiliki nilai AIC sebesar 3353,54, AICc sebesar 3353,60, dan BIC sebesar 3365,51. Nilai RMSE sebesar 15,8867 dan MAE sebesar 13,4637 menunjukkan tingkat kesalahan model pada data training.
+
+## ARIMA(1,0,1)
+```{r}
+model3.bc=Arima(train.bc, order=c(1,0,1),method="ML")
+summary(model3.bc)
+lmtest::coeftest(model3.bc) #seluruh parameter signifikan
+```
+
+Berdasarkan hasil pemodelan, diperoleh model ARIMA(1,0,1) dengan mean tidak nol. Nilai estimasi parameter AR(1) sebesar -0,5744 dengan p-value 0,3872, sedangkan parameter MA(1) sebesar 0,5383 dengan p-value 0,4288. Karena kedua p-value tersebut lebih besar dari taraf nyata 5%, maka parameter AR(1) dan MA(1) tidak signifikan. Sementara itu, parameter intercept sebesar 39,0625 memiliki p-value < 2,2 × 10⁻¹⁶, sehingga parameter intercept signifikan.
+Model ini memiliki nilai AIC sebesar 3355,11, AICc sebesar 3355,21, dan BIC sebesar 3371,08. Nilai RMSE sebesar 15,8782 dan MAE sebesar 13,4432 menunjukkan tingkat kesalahan model pada data training.
+
+# Ringkasan AIC
+```{r}
+model_tentatif <- data.frame(
+  Model = c("ARIMA(0,0,0)","ARIMA(0,0,1)","ARIMA(1,0,1)"),
+  AIC = c(AIC(model1.bc),AIC(model2.bc),AIC(model3.bc)),
+  BIC = c(BIC(model1.bc),BIC(model2.bc),BIC(model3.bc)))
+model_tentatif
+```
+
+Berdasarkan pendugaan parameter di atas, nilai AIC dan BIC terkecil dimiliki oleh model ARIMA(0,0,0). Selain itu, pada model ARIMA(0,0,0), parameter intercept juga signifikan dengan p-value < 0,05. Sementara itu, pada model ARIMA(0,0,1) dan ARIMA(1,0,1), parameter MA(1) dan AR(1) tidak signifikan. Oleh karena itu, model yang dipilih adalah ARIMA(0,0,0).
+
+
+# Analisis Sisaan {.tabset}
+Model terbaik hasil identifikasi kemudian dicek asumsi sisaannya. Sisaan model ARIMA harus memenuhi asumsi normalitas, kebebasan sisaan, dan kehomogenan ragam. Diagnostik model dilakukan secara eksplorasi dan uji formal.
+
+## Eksplorasi Sisaan
+```{r}
+sisaan.bc <- model1.bc$residuals
+
+par(mfrow = c(2,2),    
+    mar = c(4,4,2,1),  
+    oma = c(0,0,2,0))  
+
+# Q-Q Plot
+qqnorm(sisaan.bc, main = "Normal Q-Q Plot")
+qqline(sisaan.bc, col = "blue", lwd = 2)
+
+# Plot Sisaan vs Waktu
+plot(sisaan.bc, type = "p",
+     main = "Plot Sisaan vs Waktu",
+     xlab = "Waktu", ylab = "Sisaan")
+
+# ACF
+acf(sisaan.bc, main = "ACF Sisaan")
+
+# PACF
+pacf(sisaan.bc, main = "PACF Sisaan")
+```
+Berdasarkan plot kuantil-kuantil normal, secara eksploratif terlihat bahwa sisaan tidak sepenuhnya mengikuti distribusi normal, terutama pada bagian ekor karena beberapa titik menyimpang dari garis 45°. Sementara itu, pada plot sisaan terhadap waktu, sisaan terlihat menyebar secara acak di sekitar nilai nol dengan lebar sebaran yang relatif seragam, sehingga tidak terlihat adanya pola tertentu maupun perubahan ragam yang mencolok.
+Pada plot ACF sisaan, terlihat adanya spike yang melewati batas signifikansi pada sekitar lag ke-19, sehingga masih terdapat indikasi autokorelasi pada lag tersebut. Plot PACF sisaan juga menunjukkan spike yang melewati batas signifikansi pada sekitar lag ke-19 dan ke-20. Dengan demikian, secara visual sisaan belum sepenuhnya dapat dianggap saling bebas. Kondisi ini selanjutnya perlu dikonfirmasi menggunakan uji formal, seperti uji Ljung-Box.
+
+## Uji Formal {.tabset}
+### Sisaan Menyebar Normal
+```{r}
+ks.test(sisaan.bc,"pnorm")  
+```
+Selain dengan eksplorasi, asumsi tersebut dapat diuji menggunakan uji formal. Pada tahapan ini, uji formal yang digunakan untuk menguji normalitas adalah uji Kolmogorov-Smirnov (KS). Hipotesis pada uji KS adalah sebagai berikut.
+$H_0$: Sisaan menyebar normal
+$H_1$: Sisaan tidak menyebar normal
+Berdasarkan uji KS tersebut, diperoleh p-value < 2,2 × 10⁻¹⁶ yang lebih kecil dari taraf nyata 5%, sehingga tolak $H_0$. Hal ini menunjukkan bahwa sisaan tidak menyebar normal. Hasil tersebut sesuai dengan eksplorasi menggunakan plot kuantil-kuantil normal yang menunjukkan adanya penyimpangan titik-titik dari garis 45°.
+
+### Sisaan saling bebas/tidak ada autokorelasi 
+```{r}
+Box.test(sisaan.bc, type = "Ljung")  
+```
+Selanjutnya akan dilakukan uji formal untuk menguji kebebasan sisaan menggunakan uji Ljung-Box. Hipotesis yang digunakan adalah sebagai berikut.
+$H_0$: Sisaan saling bebas
+$H_1$: Sisaan tidak saling bebas
+Berdasarkan uji Ljung-Box tersebut, diperoleh p-value sebesar 0,5342 yang lebih besar dari taraf nyata 5%, sehingga gagal tolak $H_0$. Hal ini menunjukkan bahwa sisaan saling bebas. Hasil uji formal ini berbeda dengan hasil eksplorasi menggunakan plot ACF dan PACF yang menunjukkan adanya beberapa spike yang melewati batas signifikansi. Dengan demikian, berdasarkan uji formal, asumsi kebebasan sisaan terpenuhi.
+
+### Sisaan Homogen
+```{r}
+Box.test((sisaan.bc)^2, type = "Ljung") 
+```
+Hipotesis yang digunakan untuk uji kehomogenan ragam adalah sebagai berikut.
+$H_0$: Ragam sisaan homogen
+$H_1$: Ragam sisaan tidak homogen
+Berdasarkan uji Ljung-Box terhadap sisaan kuadrat tersebut, diperoleh p-value sebesar 0,3112 yang lebih besar dari taraf nyata 5%, sehingga gagal tolak $H_0$. Hal ini menunjukkan bahwa ragam sisaan homogen. Dengan demikian, berdasarkan uji formal, asumsi kehomogenan ragam terpenuhi.
+
+
+### Nilai tengah sisaan sama dengan nol 
+```{r}
+t.test(sisaan.bc, mu = 0, conf.level = 0.95)
+```
+Terakhir, dengan uji-t akan dicek apakah nilai tengah sisaan sama dengan nol. Hipotesis yang diujikan sebagai berikut.
+$H_0$: Nilai tengah sisaan sama dengan 0
+$H_1$: Nilai tengah sisaan tidak sama dengan 0
+Berdasarkan uji-t tersebut, diperoleh p-value sebesar 1 yang lebih besar dari taraf nyata 5%, sehingga gagal tolak $H_0$. Hal ini menunjukkan bahwa nilai tengah sisaan tidak berbeda secara signifikan dari nol atau dapat dianggap sama dengan nol. Hasil ini menunjukkan bahwa asumsi nilai tengah sisaan sama dengan nol terpenuhi.
+
+
+# Overfitting
+Tahapan selanjutnya adalah *overfitting*, yang dilakukan dengan menaikkan orde AR(p) dan MA(q) dari model **ARIMA(0,0,0)**. Kandidat model *overfitting* yang digunakan adalah **ARIMA(1,0,0)**, **ARIMA(0,0,1)**, dan **ARIMA(1,0,1)**. Model-model tersebut kemudian dibandingkan dengan model ARIMA(0,0,0) berdasarkan nilai AIC, BIC, serta signifikansi parameternya. Karena model hasil *overfitting* tidak memberikan hasil yang lebih baik dibandingkan model ARIMA(0,0,0), maka model terbaik yang dipilih tetap **ARIMA(0,0,0)** dan selanjutnya digunakan untuk tahap peramalan.
+
+```{r}
+model4.bc=Arima(train.bc, order=c(1,0,0),method="ML")
+summary(model4.bc)
+lmtest::coeftest(model4.bc)
+
+model5.bc=Arima(train.bc, order=c(0,0,1),method="ML")
+summary(model5.bc)
+lmtest::coeftest(model5.bc)
+
+model6.bc=Arima(train.bc, order=c(1,0,1),method="ML")
+summary(model6.bc)
+lmtest::coeftest(model6.bc)
+```
+Berdasarkan hasil overfitting, pada model ARIMA(1,0,0) diperoleh p-value parameter AR(1) sebesar 0,5354, sehingga parameter AR(1) tidak signifikan. Pada model ARIMA(0,0,1), parameter MA(1) memiliki p-value sebesar 0,5493, sehingga parameter MA(1) juga tidak signifikan. Sementara itu, pada model ARIMA(1,0,1), parameter AR(1) dan MA(1) masing-masing memiliki p-value sebesar 0,3872 dan 0,4288, sehingga keduanya tidak signifikan.  
+Selain itu, nilai AIC model overfitting yaitu 3353,51 untuk ARIMA(1,0,0), 3353,54 untuk ARIMA(0,0,1), dan 3355,11 untuk ARIMA(1,0,1), semuanya lebih besar dibandingkan AIC model ARIMA(0,0,0) sebesar 3351,90. Dengan demikian, model overfitting tidak memberikan perbaikan dibandingkan model awal, sehingga model yang dipilih tetap ARIMA(0,0,0).
+
+# Model Terbaik: ARIMA(0,0,0)
+```{r}
+model.terbaik <- Arima(train.bc, order = c(0,0,0), method = "ML")
+summary(model.terbaik)
+lmtest::coeftest(model.terbaik)
+```
+Berdasarkan hasil pemodelan, diperoleh model terbaik yaitu ARIMA(0,0,0) dengan non-zero mean. Nilai estimasi parameter intercept sebesar 39,0614 dengan standard error sebesar 0,7947. Berdasarkan uji signifikansi parameter, diperoleh p-value < 2,2 × 10⁻¹⁶, yang lebih kecil dari taraf nyata 5%, sehingga tolak $H_0$ dan menunjukkan bahwa parameter intercept signifikan. Model ini memiliki nilai AIC sebesar 3351,90, AICc sebesar 3351,93, dan BIC sebesar 3359,88. Nilai RMSE sebesar 15,8939 dan MAE sebesar 13,4665 menunjukkan tingkat kesalahan model pada data training.
+
+
+# Peralaman
+Peramalan dilakukan menggunakan fungsi forecast() . Contoh peramalan berikut ini dilakukan untuk 100 hari ke depan.
+```{r}
+ramalan.bc <- forecast::forecast(model.terbaik, h = length(test.ts))
+data.ramalan.bc <- ramalan.bc$mean
+plot(ramalan.bc)
+```
+```{r}
+# Inverse Box-Cox
+hasil.bc <- data.ramalan.bc^(1/lambda_opt)
+
+# Bandingkan aktual dan forecast
+perbandingan.bc <- cbind(
+  Aktual = test.ts,
+  Forecast = as.numeric(hasil.bc)
+)
+
+print(head(perbandingan.bc, 10))
+```
+
+```{r}
+# Hitung akurasi
+test.ts <- ts(data_revenue_test, start = 401)
+akurasi_test <- accuracy(hasil.bc, test.ts)
+akurasi_test
+```
+
+Berdasarkan hasil akurasi pada data testing, diperoleh nilai ME sebesar 20.260,42, yang menunjukkan bahwa secara rata-rata hasil peramalan cenderung lebih rendah dibandingkan nilai aktual. Nilai RMSE sebesar 59.755,79 dan MAE sebesar 41.650 menunjukkan besarnya kesalahan peramalan pada data testing. Sementara itu, diperoleh nilai MAPE sebesar 312,56%, yang menunjukkan bahwa tingkat kesalahan peramalan relatif terhadap nilai aktual masih cukup besar. Nilai Theil's U sebesar 0,6312 menunjukkan bahwa model memiliki kinerja peramalan yang lebih baik dibandingkan metode naif karena nilainya kurang dari 1.
+
+```{r}
+# Plot data aktual
+ts.plot(test.ts, col = "black", lty = 1,
+        xlab = "Waktu", ylab = "Total Revenue")
+
+# Garis forecast
+lines(1:length(hasil.bc), hasil.bc,
+      col = "blue", lty = 2, lwd = 2)
+
+legend("topleft",
+       legend = c("Data Aktual", "Forecast"),
+       col = c("black", "blue"),
+       lty = c(1, 2), lwd = c(1, 2),
+       bty = "n")
+```
 
 
 
